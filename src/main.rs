@@ -1,15 +1,105 @@
-use petgraph::graph::Graph;
-fn main() {
-    //println!("Hello, world!");
-    let mut graph = Graph::<&str, &str>::new();
+use csv::ReaderBuilder;
+use petgraph::graph::{Graph, NodeIndex};
+use petgraph::Undirected;
+use std::collections::HashMap;
+use std::error::Error;
 
-    let a = graph.add_node("A");
-    let b = graph.add_node("B");
-    let c = graph.add_node("C");
+use std::fs::File;
 
-    graph.add_edge(a, b, "A to B");
-    graph.add_edge(b, c, "B to C");
-    graph.add_edge(c, a, "C to A");
+fn main() -> Result<(), Box<dyn Error>> {
+    let mut movies: HashMap<String, Vec<String>> = HashMap::new();
+    let mut actor_indices: HashMap<String, NodeIndex> = HashMap::new();
+    let mut graph = Graph::<String, u32, Undirected>::new_undirected();
 
-    println!("{:?}", graph);
+    let data_dir = "dataset/";
+    let title_basics_path = format!("{}{}", data_dir, "title.basics.tsv");
+    let title_principals_path = format!("{}{}", data_dir, "title.principals.tsv");
+
+    let _ = File::open(&title_basics_path).map_err(|e| format!("Failed to open {}: {}", title_basics_path, e))?;
+    let _ = File::open(&title_principals_path).map_err(|e| format!("Failed to open {}: {}", title_principals_path, e))?;
+
+    // Parsing title.basics.tsv to get movie IDs
+    let mut rdr = ReaderBuilder::new()
+        .delimiter(b'\t')
+        .from_path(&title_basics_path)?;
+    
+
+    for result in rdr.records() {
+        match result {
+            Ok(record) => {
+                let movie_id = record[0].to_string();
+                movies.insert(movie_id, Vec::new());
+            },
+            Err(e) => {
+                // Ignora gli errori di lettura e continua con la prossima riga
+                println!("Error reading record: {}", e);
+                continue;
+            }
+        }
+    }
+
+    // Parsing title.principals.tsv to get actors in each movie
+    let mut rdr = ReaderBuilder::new()
+        .delimiter(b'\t')
+        .from_path(&title_principals_path)?;
+
+    for result in rdr.records() {
+        match result {
+            Ok(record) => {
+                let movie_id = &record[0];
+                let person_id = &record[2];
+                let category = &record[3];
+
+                if category == "actor" || category == "actress" {
+                    if let Some(actors) = movies.get_mut(movie_id) {
+                        actors.push(person_id.to_string());
+                    }
+                }
+            },
+            Err(e) => {
+                // Ignora gli errori di lettura e continua con la prossima riga
+                println!("Error reading record: {}", e);
+                continue;
+            }
+        }
+    }
+
+    // Create nodes for all actors
+    for actors in movies.values() {
+        for actor in actors {
+            actor_indices.entry(actor.clone()).or_insert_with(|| graph.add_node(actor.clone()));
+        }
+    }
+
+    // Create the actor-actor graph
+    for actors in movies.values() {
+        for i in 0..actors.len() {
+            for j in (i + 1)..actors.len() {
+                let actor1 = &actors[i];
+                let actor2 = &actors[j];
+
+                let actor1_index = actor_indices[actor1];
+                let actor2_index = actor_indices[actor2];
+
+                if let Some(edge) = graph.find_edge(actor1_index, actor2_index) {
+                    let edge_weight = graph.edge_weight_mut(edge).unwrap();
+                    *edge_weight += 1;
+                } else {
+                    graph.add_edge(actor1_index, actor2_index, 1);
+                }
+            }
+        }
+    }
+
+    // Example of printing the graph
+    for node in graph.node_indices() {
+        println!("{:?}: {:?}", node, graph[node]);
+    }
+
+    for edge in graph.edge_indices() {
+        let (source, target) = graph.edge_endpoints(edge).unwrap();
+        println!("{:?} -- {:?} --> {:?} : {:?}", graph[source], graph[edge], graph[target], graph.edge_weight(edge).unwrap());
+    }
+
+    Ok(())
 }
