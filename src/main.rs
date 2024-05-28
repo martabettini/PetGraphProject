@@ -1,18 +1,44 @@
 use csv::ReaderBuilder;
 use petgraph::graph::{Graph, NodeIndex};
+use petgraph::dot::{Dot, Config};
 use petgraph::Undirected;
+use serde::Deserialize;
 use std::collections::HashMap;
 use std::error::Error;
 use std::fs::File;
 
+#[derive(Debug, Deserialize)]
+struct TitleBasicsRecord {
+    tconst: String,
+    titleType: String,
+    primaryTitle: String,
+    originalTitle: String,
+    isAdult: String,
+    startYear: String,
+    endYear: String,
+    runtimeMinutes: String,
+    genres: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct TitlePrincipalsRecord {
+    tconst: String,
+    ordering: String,
+    nconst: String,
+    category: String,
+    job: String,
+    characters: String,
+}
+
 fn main() -> Result<(), Box<dyn Error>> {
     let mut movies: HashMap<String, Vec<String>> = HashMap::new();
     let mut actor_indices: HashMap<String, NodeIndex> = HashMap::new();
+    
     let mut graph = Graph::<String, u32, Undirected>::new_undirected();
 
     let data_dir = "dataset/";
-    let title_basics_path = format!("{}{}", data_dir, "basic.finto.tsv");
-    let title_principals_path = format!("{}{}", data_dir, "principals.finto.tsv");
+    let title_basics_path = format!("{}{}", data_dir, "title.basics.tsv");
+    let title_principals_path = format!("{}{}", data_dir, "title.principals.tsv");
 
     let _ = File::open(&title_basics_path).map_err(|e| format!("Failed to open {}: {}", title_basics_path, e))?;
     let _ = File::open(&title_principals_path).map_err(|e| format!("Failed to open {}: {}", title_principals_path, e))?;
@@ -22,23 +48,16 @@ fn main() -> Result<(), Box<dyn Error>> {
         .flexible(true)
         .delimiter(b'\t')
         .from_path(&title_basics_path)?;
-
-    for result in rdr.records() {
-        match result {
-            Ok(record) => {
-                if record.len() > 0 {
-                    let movie_id = record[0].trim().to_string();
-                    movies.insert(movie_id, Vec::new());
-                } else {
-                    println!("Record incompleto trovato: {:?}", record);
-                }
-            },
-            Err(e) => {
-                // Ignora gli errori di lettura e continua con la prossima riga
-                println!("Error reading record: {}", e);
-                continue;
-            }
+    
+    let mut count = 0;
+    for result in rdr.deserialize() {
+        if count >= 1000_000 {
+            break;
         }
+        let record: TitleBasicsRecord = result?;
+        println!("{:?}", record.tconst);
+        movies.insert(record.tconst, Vec::new());
+        count += 1;
     }
 
     // Parsing title.principals.tsv to get actors in each movie
@@ -47,40 +66,18 @@ fn main() -> Result<(), Box<dyn Error>> {
         .delimiter(b'\t')
         .from_path(&title_principals_path)?;
 
-    for result in rdr1.records() {
-        match result {
-            Ok(record) => {
-                //println!("{}", record.len());
-                //println!("{:?}", record.get(0));
-                //println!("{:?}", record.get(1));
-                //println!("{:?}", record);
-                
-                // Accedi al campo che contiene la stringa da suddividere
-                let field = &record[0]; // Supponiamo che la stringa da suddividere sia nel primo campo
-                
-                // Dividi la stringa in base agli spazi e colleziona le parole in un vettore
-                let words: Vec<&str> = field.split_whitespace().collect();
-
-                    let movie_id = words[0];
-                    let person_id = words[2];
-                    let category = words[3];
-                    println!("{:?}", words[0]);
-                    println!("{:?}", words[2]);
-                    println!("{:?}", words[3]);
-
-                    if category == "actor" || category == "actress" {
-                        if let Some(actors) = movies.get_mut(movie_id) {
-                            actors.push(person_id.to_string());
-                        }
-                    }
-                
-            },
-            Err(e) => {
-                // Ignora gli errori di lettura e continua con la prossima riga
-                println!("Error reading record: {}", e);
-                continue;
+    count = 0;
+    for result in rdr1.deserialize() {
+        if count >= 1000_000 {
+            break;
+        }
+        let record: TitlePrincipalsRecord = result?;
+        if record.category == "actor" || record.category == "actress" {
+            if let Some(actors) = movies.get_mut(&record.tconst) {
+                actors.push(record.nconst);
             }
         }
+        count += 1;
     }
 
     // Create nodes for all actors
@@ -119,7 +116,10 @@ fn main() -> Result<(), Box<dyn Error>> {
         let (source, target) = graph.edge_endpoints(edge).unwrap();
         println!("{:?} -- {:?} --> {:?} : {:?}", graph[source], graph[edge], graph[target], graph.edge_weight(edge).unwrap());
     }
+    //let dot = Dot::with_config(&graph, &[Config::EdgeNoLabel]);
+    //std::fs::write("graph.dot", format!("{:?}", dot))?;
+
+    println!("Graph saved to graph.dot");
 
     Ok(())
 }
-
