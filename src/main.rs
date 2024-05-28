@@ -1,12 +1,13 @@
 use csv::ReaderBuilder;
 use petgraph::graph::{Graph, NodeIndex};
-use petgraph::dot::{Dot, Config};
+//use petgraph::dot::{Dot, Config};
 use petgraph::Undirected;
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::error::Error;
 use std::fs::File;
 
+// Definire le strutture per deserializzare i dati dai file TSV
 #[derive(Debug, Deserialize)]
 struct TitleBasicsRecord {
     tconst: String,
@@ -31,9 +32,13 @@ struct TitlePrincipalsRecord {
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
+   
+    // HashMap per associare i film agli attori
     let mut movies: HashMap<String, Vec<String>> = HashMap::new();
+    // HashMap per associare gli attori agli indici dei nodi nel grafo
     let mut actor_indices: HashMap<String, NodeIndex> = HashMap::new();
     
+    // Creazione di un grafo non orientato
     let mut graph = Graph::<String, u32, Undirected>::new_undirected();
 
     let data_dir = "dataset/";
@@ -43,7 +48,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let _ = File::open(&title_basics_path).map_err(|e| format!("Failed to open {}: {}", title_basics_path, e))?;
     let _ = File::open(&title_principals_path).map_err(|e| format!("Failed to open {}: {}", title_principals_path, e))?;
 
-    // Parsing title.basics.tsv to get movie IDs
+    // Parsing del file title.basics.tsv per ottenere gli ID dei film
     let mut rdr = ReaderBuilder::new()
         .flexible(true)
         .delimiter(b'\t')
@@ -51,7 +56,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     
     let mut count = 0;
     for result in rdr.deserialize() {
-        if count >= 1000_000 {
+        if count >= 1_000_000 {
             break;
         }
         let record: TitleBasicsRecord = result?;
@@ -60,7 +65,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         count += 1;
     }
 
-    // Parsing title.principals.tsv to get actors in each movie
+    // Parsing del file title.principals.tsv per ottenere gli attori di ciascun film
     let mut rdr1 = ReaderBuilder::new()
         .flexible(true)
         .delimiter(b'\t')
@@ -68,7 +73,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     count = 0;
     for result in rdr1.deserialize() {
-        if count >= 1000_000 {
+        if count >= 1_000_000 {
             break;
         }
         let record: TitlePrincipalsRecord = result?;
@@ -80,14 +85,14 @@ fn main() -> Result<(), Box<dyn Error>> {
         count += 1;
     }
 
-    // Create nodes for all actors
+    // Creazione dei nodi per tutti gli attori
     for actors in movies.values() {
         for actor in actors {
             actor_indices.entry(actor.clone()).or_insert_with(|| graph.add_node(actor.clone()));
         }
     }
 
-    // Create the actor-actor graph
+    // Creazione del grafo attore-attore
     for actors in movies.values() {
         for i in 0..actors.len() {
             for j in (i + 1)..actors.len() {
@@ -97,6 +102,8 @@ fn main() -> Result<(), Box<dyn Error>> {
                 let actor1_index = actor_indices[actor1];
                 let actor2_index = actor_indices[actor2];
 
+                // Se esiste già un ramo tra due attori incremento il peso
+                // altrimento creo un nuovo ramo tra i due nodi (attori)
                 if let Some(edge) = graph.find_edge(actor1_index, actor2_index) {
                     let edge_weight = graph.edge_weight_mut(edge).unwrap();
                     *edge_weight += 1;
@@ -107,7 +114,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
     }
 
-    // Example of printing the graph
+    // Stampa del grafo a terminale
     for node in graph.node_indices() {
         println!("{:?}: {:?}", node, graph[node]);
     }
@@ -116,6 +123,8 @@ fn main() -> Result<(), Box<dyn Error>> {
         let (source, target) = graph.edge_endpoints(edge).unwrap();
         println!("{:?} -- {:?} --> {:?} : {:?}", graph[source], graph[edge], graph[target], graph.edge_weight(edge).unwrap());
     }
+    
+    // Stampa del grafo con graphviz e conseguente esplosione del pc
     //let dot = Dot::with_config(&graph, &[Config::EdgeNoLabel]);
     //std::fs::write("graph.dot", format!("{:?}", dot))?;
 
