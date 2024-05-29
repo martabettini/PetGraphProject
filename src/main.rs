@@ -1,6 +1,7 @@
 use csv::ReaderBuilder;
+use petgraph::algo::{connected_components};
+use petgraph::dot::{Config, Dot};
 use petgraph::graph::{Graph, NodeIndex};
-//use petgraph::dot::{Dot, Config};
 use petgraph::Undirected;
 use serde::Deserialize;
 use std::collections::HashMap;
@@ -56,7 +57,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     
     let mut count = 0;
     for result in rdr.deserialize() {
-        if count >= 1_000_000 {
+        if count >= 25_000 {
             break;
         }
         let record: TitleBasicsRecord = result?;
@@ -73,7 +74,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     count = 0;
     for result in rdr1.deserialize() {
-        if count >= 1_000_000 {
+        if count >= 25_000 {
             break;
         }
         let record: TitlePrincipalsRecord = result?;
@@ -115,20 +116,30 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
 
     // Stampa del grafo a terminale
-    for node in graph.node_indices() {
+    /*for node in graph.node_indices() {
         println!("{:?}: {:?}", node, graph[node]);
     }
 
     for edge in graph.edge_indices() {
         let (source, target) = graph.edge_endpoints(edge).unwrap();
         println!("{:?} -- {:?} --> {:?} : {:?}", graph[source], graph[edge], graph[target], graph.edge_weight(edge).unwrap());
-    }
+    }*/
     
     // Stampa del grafo con graphviz e conseguente esplosione del pc
-    //let dot = Dot::with_config(&graph, &[Config::EdgeNoLabel]);
-    //std::fs::write("graph.dot", format!("{:?}", dot))?;
-
+    let dot = Dot::with_config(&graph, &[Config::EdgeNoLabel]);
+    std::fs::write("graph.dot", format!("{:?}", dot))?;
     println!("Graph saved to graph.dot");
+    
+    // Calcolare il numero di componenti connesse
+    let components = connected_components(&graph);
+    println!("Number of connected components: {}", components);
+
+    // Trovare il nodo con il grado più alto
+    let max_degree_node = graph.node_indices()
+        .max_by_key(|&node| graph.edges(node).count())
+        .unwrap();
+    let max_degree = graph.edges(max_degree_node).count();
+    println!("Node with max degree: {:?}, Degree: {}", graph[max_degree_node], max_degree);
 
     Ok(())
 }
